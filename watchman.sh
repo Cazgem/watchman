@@ -20,7 +20,7 @@
 LOGFILE="/var/log/nightly-commit-$(date '+%Y-%m-%d').log"
 TIMESTAMP="$(date '+%Y-%m-%d %H:%M:%S')"
 MSG="Nightly auto-commit on $TIMESTAMP"
-WEBUI_DIR="/var/www/watchman/api"
+WEBUI_DIR="/srv/www/watchman/api"
 
 ASCII_LOGO="
 
@@ -33,6 +33,17 @@ log() {
 
 ensure_safe_directory() {
     local REPO_PATH="$1"
+    local GIT_DIR_PATH=""
+
+    if [[ -f "$REPO_PATH/.git" ]]; then
+        GIT_DIR_PATH="$(sed -n 's/^gitdir: //p' "$REPO_PATH/.git" 2>/dev/null | head -n 1)"
+        if [[ -n "$GIT_DIR_PATH" && "$GIT_DIR_PATH" != /* ]]; then
+            GIT_DIR_PATH="$REPO_PATH/$GIT_DIR_PATH"
+        fi
+        if [[ -n "$GIT_DIR_PATH" ]]; then
+            GIT_DIR_PATH="$(readlink -f "$GIT_DIR_PATH" 2>/dev/null || printf '%s' "$GIT_DIR_PATH")"
+        fi
+    fi
 
     if git -C "$REPO_PATH" rev-parse --git-dir >/dev/null 2>&1; then
         return 0
@@ -40,6 +51,9 @@ ensure_safe_directory() {
 
     if git -C "$REPO_PATH" rev-parse --git-dir 2>&1 | grep -q "dubious ownership"; then
         git config --global --add safe.directory "$REPO_PATH" >/dev/null 2>&1
+        if [[ -n "$GIT_DIR_PATH" ]]; then
+            git config --global --add safe.directory "$GIT_DIR_PATH" >/dev/null 2>&1
+        fi
     fi
 }
 
