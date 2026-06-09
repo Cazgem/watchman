@@ -1,0 +1,14 @@
+body {
+    font-family: monospace;
+    background: #111;
+    color: #eee;
+    padding: 20px;
+}
+
+.logo {
+    color: #0f0;
+}
+
+h1, h2 {
+    color: #0f0;
+}

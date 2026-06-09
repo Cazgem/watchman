@@ -2,7 +2,7 @@
 #
 # ============================================================
 #  Watchman v1.0.0
-#  Automated Git Maintenance, Commit, Rebase, and Tagging
+#  Automated Git Stewardship System
 #  https://github.com/Cazgem/watchman
 #
 #  Features:
@@ -13,11 +13,19 @@
 #   - Automatic tagging when dev is merged
 #   - Stale rebase cleanup
 #   - Hard-coded repo support
+#   - WebUI JSON generation
+#   - CLI: status, doctor, init, -r /repo
 # ============================================================
 
 LOGFILE="/var/log/nightly-commit-$(date '+%Y-%m-%d').log"
 TIMESTAMP="$(date '+%Y-%m-%d %H:%M:%S')"
 MSG="Nightly auto-commit on $TIMESTAMP"
+WEBUI_DIR="/var/www/watchman/api"
+
+ASCII_LOGO="
+
+             Watchman — Automated Git Steward
+"
 
 log() {
     echo "[$(date '+%H:%M:%S')] $1" | tee -a "$LOGFILE"
@@ -40,7 +48,7 @@ get_primary_branch() {
 }
 
 ########################################
-# Reusable function
+# Core scanning + commit + rebase logic
 ########################################
 scan_and_commit() {
     local PATH_GLOB="$1"
@@ -85,7 +93,7 @@ scan_and_commit() {
         # Auto-rebase dev onto primary branch
         ########################################
         log "Rebasing dev onto $PRIMARY_BRANCH"
-        git.fetch origin "$PRIMARY_BRANCH" &>/dev/null
+        git fetch origin "$PRIMARY_BRANCH" &>/dev/null
 
         if git rebase "origin/$PRIMARY_BRANCH" &>/dev/null; then
             log "Rebase successful"
@@ -194,11 +202,111 @@ scan_hardcoded() {
 }
 
 ########################################
-# Calls
+# WebUI JSON generation
+########################################
+generate_webui_json() {
+    mkdir -p "$WEBUI_DIR"
+
+    cat > "$WEBUI_DIR/status.json" <<EOF
+{
+  "timestamp": "$TIMESTAMP",
+  "logfile": "$LOGFILE"
+}
+EOF
+
+    printf "{\n  \"repos\": [\n" > "$WEBUI_DIR/repos.json"
+    for R in /srv/www/*/html /srv/projects/* "${HARDCODED_REPOS[@]}"; do
+        printf "    \"%s\",\n" "$R" >> "$WEBUI_DIR/repos.json"
+    done
+    sed -i '$ s/,$//' "$WEBUI_DIR/repos.json"
+    printf "  ]\n}\n" >> "$WEBUI_DIR/repos.json"
+}
+
+########################################
+# CLI Dispatcher
 ########################################
 
+# Single repo mode
+if [[ "$1" == "--single" ]]; then
+    scan_and_commit "$2" "single repo"
+    generate_webui_json
+    exit 0
+fi
+
+# Status
+if [[ "$1" == "status" ]]; then
+    echo "$ASCII_LOGO"
+    echo "Watchman Status"
+    echo "----------------"
+    echo "Last run: $TIMESTAMP"
+    echo "Log file: $LOGFILE"
+    echo "Scan paths:"
+    echo "  - /srv/www/*/html"
+    echo "  - /srv/projects/*"
+    echo "Hard-coded repos:"
+    for R in "${HARDCODED_REPOS[@]}"; do echo "  - $R"; done
+    exit 0
+fi
+
+# Doctor
+if [[ "$1" == "doctor" ]]; then
+    echo "$ASCII_LOGO"
+    echo "Watchman Doctor"
+    echo "----------------"
+    echo "Git version:"
+    git --version
+    echo ""
+    echo "Network check:"
+    ping -c1 github.com >/dev/null 2>&1 && echo "Network OK" || echo "Network issue"
+    echo ""
+    echo "Log write test:"
+    touch /var/log/watchman-test.log && echo "Log write OK" || echo "Cannot write logs"
+    exit 0
+fi
+
+# Init
+if [[ "$1" == "init" ]]; then
+    TARGET="$2"
+    if [[ -z "$TARGET" ]]; then
+        echo "Usage: watchman init /path/to/repo"
+        exit 1
+    fi
+
+    cd "$TARGET" || { echo "Invalid path"; exit 1; }
+
+    echo "Initializing repository at $TARGET"
+
+    if [[ ! -d ".git" ]]; then
+        git init
+        echo "Initialized empty Git repository"
+    fi
+
+    if git show-ref --verify --quiet refs/heads/main; then
+        PRIMARY="main"
+    elif git show-ref --verify --quiet refs/heads/master; then
+        PRIMARY="master"
+    else
+        PRIMARY="main"
+        git checkout -b main
+        echo "Created main branch"
+    fi
+
+    if ! git show-ref --verify --quiet refs/heads/dev; then
+        git checkout "$PRIMARY"
+        git checkout -b dev
+        echo "Created dev branch"
+    fi
+
+    echo "Watchman initialization complete."
+    exit 0
+fi
+
+########################################
+# Default: full scan
+########################################
 scan_and_commit "/srv/www/*/html" "web directories"
 scan_and_commit "/srv/projects/*" "project directories"
 scan_hardcoded
+generate_webui_json
 
 log "=== Nightly commit complete ==="
