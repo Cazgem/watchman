@@ -28,7 +28,19 @@ ASCII_LOGO="
 "
 
 log() {
-    echo "[$(date '+%H:%M:%S')] $1" | tee -a "$LOGFILE"
+    echo "[$(date '+%H:%M:%S')] $1" | tee -a "$LOGFILE" >&2
+}
+
+ensure_safe_directory() {
+    local REPO_PATH="$1"
+
+    if git -C "$REPO_PATH" rev-parse --git-dir >/dev/null 2>&1; then
+        return 0
+    fi
+
+    if git -C "$REPO_PATH" rev-parse --git-dir 2>&1 | grep -q "dubious ownership"; then
+        git config --global --add safe.directory "$REPO_PATH" >/dev/null 2>&1
+    fi
 }
 
 ########################################
@@ -63,6 +75,8 @@ scan_and_commit() {
             log "Skipping (not a git repo)"
             continue
         fi
+
+        ensure_safe_directory "$REPO"
 
         cd "$REPO" || continue
 
@@ -171,6 +185,8 @@ scan_hardcoded() {
             log "Skipping (not a git repo)"
             continue
         fi
+
+        ensure_safe_directory "$REPO"
 
         cd "$REPO" || continue
 
