@@ -22,6 +22,27 @@ TIMESTAMP="$(date '+%Y-%m-%d %H:%M:%S')"
 MSG="Nightly auto-commit on $TIMESTAMP"
 WEBUI_DIR="/srv/www/watchman/api"
 
+resolve_gitdir_path() {
+    local REPO_PATH="$1"
+    local GIT_DIR_PATH=""
+
+    if [[ -f "$REPO_PATH/.git" ]]; then
+        GIT_DIR_PATH="$(sed -n 's/^gitdir: //p' "$REPO_PATH/.git" 2>/dev/null | head -n 1)"
+    elif [[ -d "$REPO_PATH/.git" ]]; then
+        GIT_DIR_PATH="$REPO_PATH/.git"
+    fi
+
+    if [[ -n "$GIT_DIR_PATH" && "$GIT_DIR_PATH" != /* ]]; then
+        GIT_DIR_PATH="$REPO_PATH/$GIT_DIR_PATH"
+    fi
+
+    if [[ -n "$GIT_DIR_PATH" ]]; then
+        GIT_DIR_PATH="$(readlink -f "$GIT_DIR_PATH" 2>/dev/null || printf '%s' "$GIT_DIR_PATH")"
+    fi
+
+    printf '%s\n' "$GIT_DIR_PATH"
+}
+
 ASCII_LOGO="
 
              Watchman — Automated Git Steward
@@ -79,6 +100,7 @@ get_primary_branch() {
 scan_and_commit() {
     local PATH_GLOB="$1"
     local LABEL="$2"
+    local GIT_DIR_PATH=""
 
     log "=== Checking $LABEL ==="
 
@@ -87,6 +109,12 @@ scan_and_commit() {
 
         if [[ ! -d "$REPO/.git" ]]; then
             log "Skipping (not a git repo)"
+            continue
+        fi
+
+        GIT_DIR_PATH="$(resolve_gitdir_path "$REPO")"
+        if [[ "$GIT_DIR_PATH" == *"/releases/"* ]]; then
+            log "Skipping (backed by release folder: $GIT_DIR_PATH)"
             continue
         fi
 
@@ -197,6 +225,12 @@ scan_hardcoded() {
 
         if [[ ! -d "$REPO/.git" ]]; then
             log "Skipping (not a git repo)"
+            continue
+        fi
+
+        GIT_DIR_PATH="$(resolve_gitdir_path "$REPO")"
+        if [[ "$GIT_DIR_PATH" == *"/releases/"* ]]; then
+            log "Skipping (backed by release folder: $GIT_DIR_PATH)"
             continue
         fi
 
