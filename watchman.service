@@ -1,0 +1,10 @@
+[Unit]
+Description=Watchman Git Maintenance Service
+After=network.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/bin/watchman
+User=root
+Group=root
+Nice=10
